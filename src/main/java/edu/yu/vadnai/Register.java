@@ -48,7 +48,7 @@ public class Register {
         this.registrationTime = registrationTime;
     }
 
-    public boolean authenticate() throws URISyntaxException, IOException, InterruptedException {
+    public synchronized boolean authenticate() throws URISyntaxException, IOException, InterruptedException {
         HttpRequest.Builder initialRequest = HttpRequest.newBuilder();
         initialRequest.uri(new URI(urlBase + "twbkwbis.P_WWWLogin"));
         initialRequest.GET();
@@ -70,7 +70,7 @@ public class Register {
         return true;
     }
 
-    public boolean selectTerm() throws URISyntaxException, IOException, InterruptedException {
+    public synchronized boolean selectTerm() throws URISyntaxException, IOException, InterruptedException {
         HttpRequest.Builder selectBuilder = HttpRequest.newBuilder();
         selectBuilder.uri(new URI(urlBase + "bwskflib.P_SelDefTerm"));
         selectBuilder.GET();
@@ -96,7 +96,7 @@ public class Register {
         return true;
     }
 
-    public boolean register(String crn1, String crn2, String crn3, String crn4, String crn5, String crn6, String crn7,
+    public synchronized boolean register(String crn1, String crn2, String crn3, String crn4, String crn5, String crn6, String crn7,
             String crn8, String crn9,
             String crn10) throws IOException, InterruptedException, URISyntaxException {
         while (registrationTime.after(new Date())) {
