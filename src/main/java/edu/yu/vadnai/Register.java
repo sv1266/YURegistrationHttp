@@ -8,9 +8,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpRequest.BodyPublishers;
 import java.net.http.HttpResponse.BodyHandlers;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 import org.jsoup.Jsoup;
@@ -23,14 +21,41 @@ import java.util.GregorianCalendar;
 public class Register {
 
     public static void main(String[] args) throws URISyntaxException, IOException, InterruptedException {
-        Register register = new Register("yuid", "bannerpin", new GregorianCalendar(2022, 0, 5, 14, 3).getTime());
-        register.authenticate();
-        register.selectTerm();
-        register.register(null, null, null, null, null, null, null, null, null, null);
+        Register registrationObject = new Register("YUID", "Banner Pin", new GregorianCalendar(2022, 0, 5, 14, 3).getTime());
+        String[] crns = { "12345", "67891" };
+        registrationObject.register(crns);
     }
 
     /**
-     * These static variables must be checked and update each semester
+     * Performs Registration
+     * 
+     * crns accepts up to 10 entries, additional entries will not be used.
+     * 
+     * @param crns
+     * @throws URISyntaxException
+     * @throws IOException
+     * @throws InterruptedException
+     */
+    public void register(String[] crns) throws URISyntaxException, IOException, InterruptedException {
+        this.authenticate();
+        this.selectTerm();
+        this.sendRegistrationPayload(crns);
+    }
+
+    /**
+     * @param userID
+     * @param userPin
+     * @param registrationTime
+     */
+    public Register(String userID, String userPin, Date registrationTime) {
+        this.userID = userID;
+        this.userPin = userPin;
+        this.client = HttpClient.newHttpClient();
+        this.registrationTime = registrationTime;
+    }
+
+    /**
+     * These static variables must be checked and updated each semester
      */
     private final static int term = 202201;
     private final static String urlBase = "https://banner.oci.yu.edu/ssb/";
@@ -41,72 +66,97 @@ public class Register {
     private final Date registrationTime;
     private String ssid;
 
-    public Register(String userID, String userPin, Date registrationTime) {
-        this.userID = userID;
-        this.userPin = userPin;
-        this.client = HttpClient.newHttpClient();
-        this.registrationTime = registrationTime;
-    }
+    /**
+     * Authenticates the user with Banner and saves session ID for future
+     * transactions.
+     * 
+     * @throws URISyntaxException
+     * @throws IOException
+     * @throws InterruptedException
+     */
 
-    public synchronized boolean authenticate() throws URISyntaxException, IOException, InterruptedException {
-        HttpRequest.Builder initialRequest = HttpRequest.newBuilder();
-        initialRequest.uri(new URI(urlBase + "twbkwbis.P_WWWLogin"));
-        initialRequest.GET();
-        HttpResponse<String> response = client.send(initialRequest.build(), BodyHandlers.ofString());
+    private synchronized void authenticate() throws URISyntaxException, IOException, InterruptedException {
+        // Get Login Page - implicitly verifies url is valid
+        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder();
+        requestBuilder.uri(new URI(urlBase + "twbkwbis.P_WWWLogin"));
+        requestBuilder.GET();
+        HttpResponse<String> response = client.send(requestBuilder.build(), BodyHandlers.ofString());
         if (response.statusCode() != 200) {
-            throw new IllegalStateException("Initial Get Failed - returned status code "+ response.statusCode());
+            throw new IllegalStateException("Initial Get Failed - returned status code " + response.statusCode()
+                    + "\n HTML: \n" + response.body());
         }
-        HttpRequest.Builder verificationRequest = HttpRequest.newBuilder();
-        verificationRequest.POST(BodyPublishers.ofString("sid=" + userID + "&PIN=" + userPin));
-        verificationRequest.header("Cookie", "TESTID=set; POKEHAYU=SRV_1");
-        verificationRequest.header("Content-Type", "application/x-www-form-urlencoded");
-        verificationRequest.uri(new URI(urlBase + "twbkwbis.P_ValLogin"));
-        response = client.send(verificationRequest.build(), BodyHandlers.ofString());
+
+        // Send Credentials for Login
+        requestBuilder = HttpRequest.newBuilder();
+        requestBuilder.POST(BodyPublishers.ofString("sid=" + userID + "&PIN=" + userPin));
+        requestBuilder.header("Cookie", "TESTID=set; POKEHAYU=SRV_1");
+        requestBuilder.header("Content-Type", "application/x-www-form-urlencoded");
+        requestBuilder.uri(new URI(urlBase + "twbkwbis.P_ValLogin"));
+        response = client.send(requestBuilder.build(), BodyHandlers.ofString());
         if (response.statusCode() != 200 || response.body().contains("Authorization Failure")) {
-            throw new IllegalStateException("Authentication Failed, likely bad credentials - returned status code "+ response.statusCode());
+            throw new IllegalStateException(
+                    "Authentication Failed, likely bad credentials - returned status code " + response.statusCode()
+                            + "\n HTML: \n" + response.body());
         }
         this.ssid = getSessid(response);
-
-        return true;
     }
 
-    public synchronized boolean selectTerm() throws URISyntaxException, IOException, InterruptedException {
-        HttpRequest.Builder selectBuilder = HttpRequest.newBuilder();
-        selectBuilder.uri(new URI(urlBase + "bwskflib.P_SelDefTerm"));
-        selectBuilder.GET();
-        selectBuilder.header("Cookie", "TESTID=set; " + this.ssid + " POKEHAYU=SRV_1");
-        HttpResponse<String> response = client.send(selectBuilder.build(), BodyHandlers.ofString());
+    /**
+     * Selects Registration Term
+     * 
+     * @throws URISyntaxException
+     * @throws IOException
+     * @throws InterruptedException
+     */
+    private synchronized void selectTerm() throws URISyntaxException, IOException, InterruptedException {
+        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder();
+        requestBuilder.uri(new URI(urlBase + "bwskflib.P_SelDefTerm"));
+        requestBuilder.GET();
+        requestBuilder.header("Cookie", "TESTID=set; " + this.ssid + " POKEHAYU=SRV_1");
+        HttpResponse<String> response = client.send(requestBuilder.build(), BodyHandlers.ofString());
         if (response.statusCode() != 200) {
-            return false;
+            throw new IllegalStateException("Failed \n HTML: \n" + response.body());
         }
-
         getSessid(response);
-        HttpRequest.Builder termSelect = HttpRequest.newBuilder();
-        termSelect.uri(new URI(urlBase + "bwcklibs.P_StoreTerm"));
-        termSelect.POST(BodyPublishers.ofString("name_var=bmenu.P_RegMnu&term_in=" + term));
-
-        termSelect.header("Cookie", "TESTID=set; " + this.ssid + " POKEHAYU=SRV_1");
-        termSelect.header("Content-Type", "application/x-www-form-urlencoded");
-        response = client.send(termSelect.build(), BodyHandlers.ofString());
-
+        requestBuilder = HttpRequest.newBuilder();
+        requestBuilder.uri(new URI(urlBase + "bwcklibs.P_StoreTerm"));
+        requestBuilder.POST(BodyPublishers.ofString("name_var=bmenu.P_RegMnu&term_in=" + term));
+        requestBuilder.header("Cookie", "TESTID=set; " + this.ssid + " POKEHAYU=SRV_1");
+        requestBuilder.header("Content-Type", "application/x-www-form-urlencoded");
+        response = client.send(requestBuilder.build(), BodyHandlers.ofString());
         if (response.statusCode() != 200) {
-            return false;
+            throw new IllegalStateException("Failed \n HTML: \n" + response.body());
         }
         this.ssid = getSessid(response);
-        return true;
     }
 
-    public synchronized boolean register(String crn1, String crn2, String crn3, String crn4, String crn5, String crn6, String crn7,
-            String crn8, String crn9,
-            String crn10) throws IOException, InterruptedException, URISyntaxException {
+    private synchronized void waitForGoTime() throws InterruptedException {
         while (registrationTime.after(new Date())) {
             TimeUnit time = TimeUnit.SECONDS;
             long difference = time.convert(registrationTime.getTime() - new Date().getTime(), TimeUnit.MILLISECONDS);
             System.out.println("waiting another " + difference + " seconds");
             Thread.sleep(1000);
         }
+    }
+
+    /**
+     * Performs registration process.
+     * 
+     * @param crns
+     * @throws IOException
+     * @throws InterruptedException
+     * @throws URISyntaxException
+     */
+    private synchronized void sendRegistrationPayload(String[] crns)
+            throws IOException, InterruptedException, URISyntaxException {
+
+        waitForGoTime();
+
         System.out.println("Registering Now...");
         long time = System.currentTimeMillis();
+
+        // Get Registration Page
+
         HttpRequest.Builder homePageBuilder = HttpRequest.newBuilder();
         homePageBuilder.uri(new URI(urlBase + "bwskfreg.P_AltPin"));
         homePageBuilder.GET();
@@ -114,22 +164,26 @@ public class Register {
         homePageBuilder.header("Content-Type", "application/x-www-form-urlencoded");
         HttpResponse<String> response = client.send(homePageBuilder.build(), BodyHandlers.ofString());
         if (response.statusCode() != 200) {
-            return false;
+            throw new IllegalStateException("Failed \n HTML: \n" + response.body());
         }
         getSessid(response);
         List<HashMap<String, String>> records = new LinkedList<>();
         getExistingRecords(response, records);
 
+        // Post Registration CRN
+
         HttpRequest.Builder register = HttpRequest.newBuilder();
         register.uri(new URI(urlBase + "bwckcoms.P_Regs"));
         register.header("Cookie", "TESTID=set; " + this.ssid + " POKEHAYU=SRV_1");
         register.header("Content-Type", "application/x-www-form-urlencoded");
-        register.POST(BodyPublishers.ofString(buildCRNPayload(crn1, crn2, crn3, crn4, crn5, crn6, crn7, crn8, crn9,
-                crn10, records)));
+        register.POST(BodyPublishers.ofString(buildCRNPayload(crns, records)));
         response = client.send(register.build(), BodyHandlers.ofString());
         if (response.statusCode() != 200) {
-            return false;
+            throw new IllegalStateException("Failed \n HTML: \n" + response.body());
         }
+
+        // Print stats
+
         System.out.println("Elapsed Time: " + (System.currentTimeMillis() - time) + " ms");
         System.out.println();
         System.out.println("Successfully Registered for:");
@@ -138,7 +192,6 @@ public class Register {
         System.out.println();
         System.out.println("Error Messages for:");
         printErrorTable(response);
-        return true;
     }
 
     private static void printCurrentCourses(HttpResponse<String> response) {
@@ -210,38 +263,58 @@ public class Register {
         }
     }
 
-    private static String buildCRNPayload(String crn1, String crn2, String crn3, String crn4, String crn5,
-            String crn6, String crn7, String crn8, String crn9, String crn10, List<HashMap<String, String>> records) {
-        if (crn1 == null) {
-            crn1 = "";
+    private static String buildCRNPayload(String[] crns, List<HashMap<String, String>> records) {
+        String crn1 = "";
+        String crn2 = "";
+        String crn3 = "";
+        String crn4 = "";
+        String crn5 = "";
+        String crn6 = "";
+        String crn7 = "";
+        String crn8 = "";
+        String crn9 = "";
+        String crn10 = "";
+
+        if (crns.length >= 1) {
+            crn1 = crns[0];
         }
-        if (crn2 == null) {
-            crn2 = "";
+
+        if (crns.length >= 2) {
+            crn2 = crns[1];
         }
-        if (crn3 == null) {
-            crn3 = "";
+
+        if (crns.length >= 3) {
+            crn3 = crns[2];
         }
-        if (crn4 == null) {
-            crn4 = "";
+
+        if (crns.length >= 4) {
+            crn4 = crns[3];
         }
-        if (crn5 == null) {
-            crn5 = "";
+
+        if (crns.length >= 5) {
+            crn5 = crns[4];
         }
-        if (crn6 == null) {
-            crn6 = "";
+
+        if (crns.length >= 6) {
+            crn6 = crns[5];
         }
-        if (crn7 == null) {
-            crn7 = "";
+
+        if (crns.length >= 7) {
+            crn7 = crns[6];
         }
-        if (crn8 == null) {
-            crn8 = "";
+
+        if (crns.length >= 8) {
+            crn8 = crns[7];
         }
-        if (crn9 == null) {
-            crn9 = "";
+
+        if (crns.length >= 9) {
+            crn9 = crns[8];
         }
-        if (crn10 == null) {
-            crn10 = "";
+
+        if (crns.length >= 10) {
+            crn10 = crns[9];
         }
+
         StringBuilder sb = new StringBuilder();
         sb.append("term_in=" + term);
         sb.append("&");
