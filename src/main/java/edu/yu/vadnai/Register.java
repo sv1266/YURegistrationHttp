@@ -19,11 +19,18 @@ import java.util.Date;
 import java.util.GregorianCalendar;
 
 public class Register {
+    /**
+     * These static variables must be checked and updated each semester
+     */
+    private final static int term = 202209; //UPDATED MAY 2022
+    private final static String urlBase = "https://banner.oci.yu.edu/ssb/";
 
     public static void main(String[] args) throws URISyntaxException, IOException, InterruptedException {
-        Register registrationObject = new Register("YUID", "Banner Pin", new GregorianCalendar(2022, 0, 5, 14, 3).getTime());
-        String[] crns = { "12345", "67891" };
+        Register registrationObject = new Register("YUID", "BANNERPIN",
+                new GregorianCalendar(2022,5-1, 6, 11, 0).getTime());
+        String[] crns = { "12345", "67890", "111213", "141516" };
         registrationObject.register(crns);
+        System.out.println(System.currentTimeMillis() + " completed");
     }
 
     /**
@@ -54,11 +61,6 @@ public class Register {
         this.registrationTime = registrationTime;
     }
 
-    /**
-     * These static variables must be checked and updated each semester
-     */
-    private final static int term = 202201;
-    private final static String urlBase = "https://banner.oci.yu.edu/ssb/";
 
     private final String userID;
     private final String userPin;
@@ -135,7 +137,7 @@ public class Register {
             TimeUnit time = TimeUnit.SECONDS;
             long difference = time.convert(registrationTime.getTime() - new Date().getTime(), TimeUnit.MILLISECONDS);
             System.out.println("waiting another " + difference + " seconds");
-            Thread.sleep(1000);
+            Thread.sleep(100);
         }
     }
 
@@ -251,6 +253,9 @@ public class Register {
     private static void getExistingRecords(HttpResponse<String> response, List<HashMap<String, String>> records) {
         Document doc = Jsoup.parse(response.body());
         Elements elements = doc.select("body > div.pagebodydiv > form > table.datadisplaytable");
+        if(elements.size()==0){
+            return;
+        }
         Element table = elements.first().child(0);
         table.child(0).remove();
         for (Element row : table.children()) {
